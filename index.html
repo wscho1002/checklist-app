@@ -34,13 +34,33 @@
     <input type="text" id="descInput" placeholder="설명 (선택사항)"><br><br>
     <label>커버 이미지 선택:</label><br>
     <input type="file" id="coverImageInput"><br><br>
+
     <h2>항목 추가</h2>
-    <input type="text" id="itemNameInput" placeholder="항목 이름">
-    <input type="file" id="itemImageInput">
+
+    <input type="text" id="itemNameInput" placeholder="항목 이름"><br><br>
+    
+    <!-- 파일/링크 선택 버튼 -->
+    <button onclick="showFileInput()">📂 파일 업로드</button>
+    <button onclick="showLinkInput()">🔗 링크 입력</button><br><br>
+    
+    <!-- 파일 업로드 input (처음엔 숨김) -->
+    <div id="fileInputSection" style="display:none;">
+      <label>이미지 파일 선택:</label><br>
+      <input type="file" id="itemImageInput"><br><br>
+    </div>
+    
+    <!-- 링크 입력 input (처음엔 숨김) -->
+    <div id="linkInputSection" style="display:none;">
+      <label>이미지 링크 입력:</label><br>
+      <input type="text" id="itemImageUrlInput" placeholder="https://..." style="width:90%;"><br><br>
+    </div>
+    
     <button onclick="addItem()">항목 추가</button>
+    
     <ul id="itemList"></ul>
     <button onclick="saveChecklist()">체크리스트 저장하기</button>
     <button onclick="showMainView()">← 메인으로</button>
+    
   </div>
 
   <!-- 체크리스트 상세 화면 -->
@@ -57,7 +77,7 @@
   </div>
 
 
-
+ 
   <!-- 이미지 확대 + 메모 모달 -->
   <div id="memoModal">
     <img id="modalImage" style="max-width:90%; max-height:50%; margin-bottom:20px;">
@@ -92,19 +112,18 @@
   let currentMemoItem = null;
 
   function addItem() {
-    const itemName = document.getElementById('itemNameInput').value.trim();
-    const itemImageInput = document.getElementById('itemImageInput');
-    const itemImageFile = itemImageInput.files[0];
+  const itemName = document.getElementById('itemNameInput').value.trim();
+  const itemImageInput = document.getElementById('itemImageInput');
+  const itemImageUrlInput = document.getElementById('itemImageUrlInput').value.trim();
+  const itemImageFile = itemImageInput.files[0];
 
-    if (itemName === "") {
-      alert("항목 이름을 입력해주세요!");
-      return;
-    }
-    if (!itemImageFile) {
-      alert("이미지를 꼭 선택해주세요!");
-      return;
-    }
+  if (itemName === "") {
+    alert("항목 이름을 입력해주세요!");
+    return;
+  }
 
+  if (itemImageFile) {
+    // 파일 업로드가 우선
     const reader = new FileReader();
     reader.onload = function(e) {
       const newItem = { name: itemName, image: e.target.result, checked: false, memo: "" };
@@ -112,10 +131,22 @@
       renderItemList();
     };
     reader.readAsDataURL(itemImageFile);
-
-    document.getElementById('itemNameInput').value = "";
-    document.getElementById('itemImageInput').value = "";
+  } else if (itemImageUrlInput) {
+    // 파일 없고 링크 입력된 경우
+    const newItem = { name: itemName, image: itemImageUrlInput, checked: false, memo: "" };
+    items.push(newItem);
+    renderItemList();
+  } else {
+    alert("이미지 파일을 업로드하거나 링크를 입력해주세요!");
+    return;
   }
+
+  // 입력칸 초기화
+  document.getElementById('itemNameInput').value = "";
+  document.getElementById('itemImageInput').value = "";
+  document.getElementById('itemImageUrlInput').value = "";
+}
+
 
   function renderItemList() {
   const itemList = document.getElementById('itemList');
@@ -132,6 +163,7 @@
     li.dataset.index = index; // li에 인덱스 저장
 
     // 손잡이
+    let draggedIndex = null;
     const handle = document.createElement('div');
     handle.textContent = "≡";
     handle.style.cursor = "grab";
@@ -203,7 +235,16 @@
     }
     draggedIndex = null;
   }
+  
+function showFileInput() {
+  document.getElementById('fileInputSection').style.display = 'block';
+  document.getElementById('linkInputSection').style.display = 'none';
+}
 
+function showLinkInput() {
+  document.getElementById('fileInputSection').style.display = 'none';
+  document.getElementById('linkInputSection').style.display = 'block';
+}
   function saveChecklist() {
   const title = document.getElementById('titleInput').value.trim();
   const description = document.getElementById('descInput').value.trim();
