@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>나만의 덕질 체크리스트</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    .view { display: none; }
+    .active { display: block; }
+    button { padding: 10px; margin-top: 10px; }
+    img { max-width: 100%; height: auto; }
+    #itemList img { width: 50px; height: 50px; vertical-align: middle; }
+    #memoModal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:1000; justify-content:center; align-items:center; flex-direction:column; }
+  </style>
+</head>
+<body>
+
+  <!-- 메인 화면 -->
+  <div id="mainView" class="view active">
+    <h1>📋 나만의 체크리스트</h1>
+    <button onclick="showCreateView()">+ 새 체크리스트 만들기</button>
+    <button onclick="downloadBackup()" style="margin-left: 10px;">💾 백업하기</button>
+    <input type="file" id="backupFileInput" style="display:none;" onchange="uploadBackup(event)">
+    <button onclick="document.getElementById('backupFileInput').click()" style="margin-left: 10px;">📂 불러오기</button>
+    <div id="checklistList"></div>
+  </div>
+  
+
+  <!-- 체크리스트 생성 화면 -->
+  <div id="createView" class="view">
+    <h1>🛠️ 체크리스트 만들기</h1>
+    <input type="text" id="titleInput" placeholder="체크리스트 제목"><br>
+    <input type="text" id="descInput" placeholder="설명 (선택사항)"><br><br>
+    <label>커버 이미지 선택:</label><br>
+    <input type="file" id="coverImageInput"><br><br>
+    <h2>항목 추가</h2>
+    <input type="text" id="itemNameInput" placeholder="항목 이름">
+    <input type="file" id="itemImageInput">
+    <button onclick="addItem()">항목 추가</button>
+    <ul id="itemList"></ul>
+    <button onclick="saveChecklist()">체크리스트 저장하기</button>
+    <button onclick="showMainView()">← 메인으로</button>
+  </div>
+
+  <!-- 체크리스트 상세 화면 -->
+<div id="detailView" class="view">
+    <h1 id="detailTitle"></h1>
+    <img id="detailCover"><br>
+    <p id="detailDesc"></p>
+    <p id="progressText" style="font-weight: bold; font-size: 18px;"></p>
+  
+    <div id="taskList" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;"></div>
+  
+    <button onclick="showMainView()">← 메인으로</button>
+    <button onclick="editChecklist()" style="background-color: #4caf50; color: white; margin-top: 10px;">✏️ 수정하기</button>
+  </div>
+
+
+
+  <!-- 이미지 확대 + 메모 모달 -->
+  <div id="memoModal">
+    <img id="modalImage" style="max-width:90%; max-height:50%; margin-bottom:20px;">
+    <textarea id="memoInput" placeholder="메모를 입력하세요" style="width:80%; height:100px;"></textarea><br>
+    <button onclick="saveMemo()">메모 저장</button>
+    <button onclick="closeMemoModal()">닫기</button>
+  </div>
+
+<script>
+  // 화면 전환
+  function showMainView() {
+    document.getElementById('mainView').classList.add('active');
+    document.getElementById('createView').classList.remove('active');
+    document.getElementById('detailView').classList.remove('active');
+  }
+
+  function showCreateView() {
+    document.getElementById('mainView').classList.remove('active');
+    document.getElementById('createView').classList.add('active');
+    document.getElementById('detailView').classList.remove('active');
+  }
+
+  function showDetailView() {
+    document.getElementById('mainView').classList.remove('active');
+    document.getElementById('createView').classList.remove('active');
+    document.getElementById('detailView').classList.add('active');
+  }
+
+  // 데이터 저장
+  let items = [];
+  let allChecklists = JSON.parse(localStorage.getItem('allChecklists')) || [];
+  let currentMemoItem = null;
+
+  function addItem() {
+    const itemName = document.getElementById('itemNameInput').value.trim();
+    const itemImageInput = document.getElementById('itemImageInput');
+    const itemImageFile = itemImageInput.files[0];
+
+    if (itemName === "") {
+      alert("항목 이름을 입력해주세요!");
+      return;
+    }
+    if (!itemImageFile) {
+      alert("이미지를 꼭 선택해주세요!");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const newItem = { name: itemName, image: e.target.result, checked: false, memo: "" };
+      items.push(newItem);
+      renderItemList();
+    };
+    reader.readAsDataURL(itemImageFile);
+
+    document.getElementById('itemNameInput').value = "";
+    document.getElementById('itemImageInput').value = "";
+  }
+
+  function renderItemList() {
+  const itemList = document.getElementById('itemList');
+  itemList.innerHTML = "";
+
+  items.forEach((item, index) => {
+    const li = document.createElement('li');
+    li.style.display = "flex";
+    li.style.alignItems = "center";
+    li.style.gap = "10px";
+    li.style.border = "1px solid #ccc";
+    li.style.padding = "5px";
+    li.style.marginBottom = "5px";
+    li.dataset.index = index; // li에 인덱스 저장
+
+    // 손잡이
+    const handle = document.createElement('div');
+    handle.textContent = "≡";
+    handle.style.cursor = "grab";
+    handle.style.fontSize = "20px";
+    handle.style.userSelect = "none";
+    handle.style.padding = "5px";
+    handle.draggable = true; // 손잡이만 draggable!
+
+    handle.addEventListener('dragstart', function(e) {
+      draggedIndex = e.target.parentElement.dataset.index; // 부모 li에서 인덱스 찾기
+    });
+
+    // 드래그 드랍 관련
+    li.addEventListener('dragover', function(e) {
+      e.preventDefault(); // drop 허용
+    });
+
+    li.addEventListener('drop', function(e) {
+      const targetIndex = e.target.closest('li').dataset.index;
+      if (draggedIndex !== null && targetIndex !== null) {
+        const draggedItem = items[draggedIndex];
+        items.splice(draggedIndex, 1);
+        items.splice(targetIndex, 0, draggedItem);
+        renderItemList(); // 새로 그리기
+      }
+      draggedIndex = null;
+    });
+
+    // 썸네일
+    const thumb = document.createElement('img');
+    thumb.src = item.image;
+    thumb.style.width = "50px";
+    thumb.style.height = "50px";
+    thumb.style.objectFit = "cover";
+
+    // 이름
+    const name = document.createElement('span');
+    name.textContent = item.name;
+    name.style.flex = "1";
+
+    // 삭제 버튼
+    const deleteBtn = document.createElement('button');
+    deleteBtn.textContent = "삭제";
+    deleteBtn.onclick = function(e) {
+      e.stopPropagation();
+      items.splice(index, 1);
+      renderItemList();
+    };
+
+    li.appendChild(handle);
+    li.appendChild(thumb);
+    li.appendChild(name);
+    li.appendChild(deleteBtn);
+    itemList.appendChild(li);
+  });
+}
+
+
+  let draggedIndex = null;
+  function handleDragStart(e) { draggedIndex = e.target.dataset.index; }
+  function handleDragOver(e) { e.preventDefault(); }
+  function handleDrop(e) {
+    const targetIndex = e.target.closest('li').dataset.index;
+    if (draggedIndex !== null && targetIndex !== null) {
+      const draggedItem = items[draggedIndex];
+      items.splice(draggedIndex, 1);
+      items.splice(targetIndex, 0, draggedItem);
+      renderItemList();
+    }
+    draggedIndex = null;
+  }
+
+  function saveChecklist() {
+  const title = document.getElementById('titleInput').value.trim();
+  const description = document.getElementById('descInput').value.trim();
+  const coverInput = document.getElementById('coverImageInput');
+  const coverFile = coverInput.files[0];
+
+  if (title === "") {
+    alert("체크리스트 제목을 입력해주세요!");
+    return;
+  }
+
+  // 수정중이라면
+  if (editingChecklistId !== null) {
+    const checklistIndex = allChecklists.findIndex(c => c.id === editingChecklistId);
+    if (checklistIndex !== -1) {
+      const checklist = allChecklists[checklistIndex];
+      checklist.title = title;
+      checklist.description = description;
+      checklist.items = items;
+
+      if (coverFile) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          checklist.cover = e.target.result;
+          localStorage.setItem('allChecklists', JSON.stringify(allChecklists));
+          afterSave();
+        };
+        reader.readAsDataURL(coverFile);
+      } else if (coverPreviewImage) {
+        checklist.cover = coverPreviewImage; // 기존 커버 유지
+        localStorage.setItem('allChecklists', JSON.stringify(allChecklists));
+        afterSave();
+      } else {
+        checklist.cover = null;
+        localStorage.setItem('allChecklists', JSON.stringify(allChecklists));
+        afterSave();
+      }
+    }
+    editingChecklistId = null; // 수정 끝
+    coverPreviewImage = null;
+  }
+  // 새 체크리스트 만드는 경우
+  else {
+    const reader = new FileReader();
+    if (coverFile) {
+      reader.onload = function(e) {
+        const checklist = {
+          id: Date.now(),
+          title: title,
+          description: description,
+          cover: e.target.result,
+          items: items
+        };
+        allChecklists.push(checklist);
+        localStorage.setItem('allChecklists', JSON.stringify(allChecklists));
+        afterSave();
+      };
+      reader.readAsDataURL(coverFile);
+    } else {
+      const checklist = {
+        id: Date.now(),
+        title: title,
+        description: description,
+        cover: null,
+        items: items
+      };
+      allChecklists.push(checklist);
+      localStorage.setItem('allChecklists', JSON.stringify(allChecklists));
+      afterSave();
+    }
+  }
+}
+
+function afterSave() {
+  resetCreateForm();
+  showMainView();
+  renderChecklistList();
+}
+
+
+  function deleteChecklist(id) {
+  if (confirm("이 체크리스트를 삭제할까요?")) {
+    allChecklists = allChecklists.filter(c => c.id !== id);
+    localStorage.setItem('allChecklists', JSON.stringify(allChecklists));
+    renderChecklistList();
+    alert("체크리스트가 삭제되었습니다.");
+  }
+}
+
+  function resetCreateForm() {
+    document.getElementById('titleInput').value = "";
+    document.getElementById('descInput').value = "";
+    document.getElementById('coverImageInput').value = "";
+    document.getElementById('itemNameInput').value = "";
+    document.getElementById('itemImageInput').value = "";
+    items = [];
+    renderItemList();
+  }
+
+  function renderChecklistList() {
+  const listDiv = document.getElementById('checklistList');
+  listDiv.innerHTML = "";
+
+  allChecklists.forEach(checklist => {
+    const div = document.createElement('div');
+    div.style.border = "1px solid #ccc";
+    div.style.padding = "10px";
+    div.style.margin = "10px 0";
+    div.style.position = "relative"; // 삭제 버튼 위치 잡기
+
+    div.onclick = () => openChecklist(checklist.id);
+
+    div.innerHTML = `
+  ${checklist.cover ? `<img src="${checklist.cover}" style="width:100%; max-height:250px; object-fit:contain;">` : ""}
+  <h2>${checklist.title}</h2>
+  <p>${checklist.description}</p>
+`;
+
+    // 삭제 버튼 추가
+    const deleteBtn = document.createElement('button');
+    deleteBtn.textContent = "삭제";
+    deleteBtn.style.position = "absolute";
+    deleteBtn.style.top = "10px";
+    deleteBtn.style.right = "10px";
+    deleteBtn.onclick = function(e) {
+      e.stopPropagation(); // 클릭 이벤트 막기
+      deleteChecklist(checklist.id);
+    };
+
+    div.appendChild(deleteBtn);
+    listDiv.appendChild(div);
+  });
+}
+
+let editingChecklistId = null; // 지금 수정중인 체크리스트 id 저장
+
+function editChecklist() {
+  const checklist = allChecklists.find(c => c.id === currentDetailId); // 상세 화면에서 보고 있던 체크리스트 id
+  
+  if (!checklist) {
+    alert("수정할 체크리스트를 찾을 수 없습니다.");
+    return;
+  }
+
+  // 커스텀 생성화면으로 이동
+  showCreateView();
+
+  // 기존 데이터 채워넣기
+  document.getElementById('titleInput').value = checklist.title;
+  document.getElementById('descInput').value = checklist.description || "";
+  document.getElementById('coverImageInput').value = ""; // 커버 이미지는 변경 시 새로 선택하게
+  coverPreviewImage = checklist.cover || null; // 커버 프리뷰를 새로 처리 (optional)
+
+  // 항목들도 채우기
+  items = checklist.items.map(item => ({ ...item })); // 복사본
+  renderItemList();
+
+  editingChecklistId = checklist.id; // 수정중인 체크리스트 ID 저장
+}
+
+let currentDetailId = null; // 현재 상세화면에 열려있는 체크리스트 ID
+let coverPreviewImage = null; // (옵션) 커버 이미지를 저장
+
+function openChecklist(id) {
+  const checklist = allChecklists.find(c => c.id === id);
+  if (!checklist) return;
+  
+  currentDetailId = id; // 현재 상세 화면 체크리스트 id 저장
+  document.getElementById('detailTitle').textContent = checklist.title;
+  document.getElementById('detailDesc').textContent = checklist.description || "";
+
+  if (checklist.cover) {
+    document.getElementById('detailCover').src = checklist.cover;
+    document.getElementById('detailCover').style.display = "block";
+  } else {
+    document.getElementById('detailCover').style.display = "none";
+  }
+
+  renderTaskList(checklist);
+  showDetailView();
+}
+
+
+  function renderTaskList(checklist) {
+    const taskListDiv = document.getElementById('taskList');
+    taskListDiv.innerHTML = "";
+    checklist.items.forEach((item, index) => {
+      const div = document.createElement('div');
+      div.style.border = "1px solid #ccc";
+      div.style.borderRadius = "8px";
+      div.style.padding = "5px";
+      div.style.textAlign = "center";
+      div.style.background = item.checked ? "#e0ffe0" : "#fff";
+      div.style.position = "relative";
+
+      div.onclick = function(e) {
+        if (e.target.tagName.toLowerCase() !== 'button') {
+          item.checked = !item.checked;
+          localStorage.setItem('allChecklists', JSON.stringify(allChecklists));
+          updateProgress(checklist);
+          renderTaskList(checklist);
+        }
+      };
+
+      if (item.image) {
+        const img = document.createElement('img');
+        img.src = item.image;
+        img.style.width = "100%";
+        img.style.height = "150px";
+        img.style.objectFit = "contain";
+        img.style.marginBottom = "5px";
+        img.style.opacity = item.checked ? "1" : "0.4";
+        img.style.transition = "opacity 0.3s ease";
+        let pressTimer;
+        img.addEventListener('mousedown', e => { e.stopPropagation(); pressTimer = setTimeout(() => openMemoModal(item), 600); });
+        img.addEventListener('mouseup', () => clearTimeout(pressTimer));
+        img.addEventListener('mouseleave', () => clearTimeout(pressTimer));
+        img.addEventListener('touchstart', e => { e.stopPropagation(); pressTimer = setTimeout(() => openMemoModal(item), 600); });
+        img.addEventListener('touchend', () => clearTimeout(pressTimer));
+        div.appendChild(img);
+      }
+
+      const span = document.createElement('div');
+      span.textContent = item.name;
+      span.style.marginTop = "5px";
+      div.appendChild(span);
+
+      const editBtn = document.createElement('button');
+      editBtn.textContent = "수정";
+      editBtn.style.position = "absolute";
+      editBtn.style.top = "5px";
+      editBtn.style.right = "50px";
+      editBtn.onclick = function(event) { event.stopPropagation(); editItem(checklist, item, index); };
+      div.appendChild(editBtn);
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.textContent = "삭제";
+      deleteBtn.style.position = "absolute";
+      deleteBtn.style.top = "5px";
+      deleteBtn.style.right = "5px";
+      deleteBtn.onclick = function(event) { event.stopPropagation(); deleteItem(checklist, index); };
+      div.appendChild(deleteBtn);
+
+      taskListDiv.appendChild(div);
+    });
+    updateProgress(checklist);
+  }
+
+  function updateProgress(checklist) {
+    const total = checklist.items.length;
+    const completed = checklist.items.filter(item => item.checked).length;
+    const percent = total === 0 ? 0 : Math.round((completed / total) * 100);
+    document.getElementById('progressText').textContent = `수집 완료: ${completed} / ${total}개 (${percent}%)`;
+  }
+
+  function editItem(checklist, item, index) {
+    const newName = prompt("새 항목 이름을 입력하세요:", item.name);
+    if (newName !== null) { item.name = newName.trim(); }
+    const newImageInput = document.createElement('input');
+    newImageInput.type = 'file';
+    newImageInput.accept = 'image/*';
+    newImageInput.onchange = function() {
+      const file = newImageInput.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          item.image = e.target.result;
+          localStorage.setItem('allChecklists', JSON.stringify(allChecklists));
+          renderTaskList(checklist);
+        };
+        reader.readAsDataURL(file);
+      }
+    };
+    newImageInput.click();
+    localStorage.setItem('allChecklists', JSON.stringify(allChecklists));
+    renderTaskList(checklist);
+  }
+
+  function deleteItem(checklist, index) {
+    if (confirm("정말 삭제할까요?")) {
+      checklist.items.splice(index, 1);
+      localStorage.setItem('allChecklists', JSON.stringify(allChecklists));
+      renderTaskList(checklist);
+      updateProgress(checklist);
+    }
+  }
+
+  function openMemoModal(item) {
+    currentMemoItem = item;
+    document.getElementById('modalImage').src = item.image;
+    document.getElementById('memoInput').value = item.memo || "";
+    document.getElementById('memoModal').style.display = "flex";
+  }
+
+  function closeMemoModal() {
+    document.getElementById('memoModal').style.display = "none";
+    currentMemoItem = null;
+  }
+
+  function saveMemo() {
+    if (currentMemoItem) {
+      currentMemoItem.memo = document.getElementById('memoInput').value.trim();
+      localStorage.setItem('allChecklists', JSON.stringify(allChecklists));
+      closeMemoModal();
+    }
+  }
+
+function downloadBackup() {
+  const dataStr = JSON.stringify(allChecklists, null, 2); // 예쁘게 저장
+  const blob = new Blob([dataStr], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement('a');
+  link.href = url;
+  
+  // 파일 이름 예쁘게 만들기 (ex: checklist-backup-20250428.json)
+  const today = new Date();
+  const fileName = `checklist-backup-${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}.json`;
+  
+  link.download = fileName;
+  link.click();
+
+  URL.revokeObjectURL(url); // 메모리 해제
+}
+
+  window.onload = function() { renderChecklistList(); }
+
+  function uploadBackup(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const importedData = JSON.parse(e.target.result);
+
+      if (!Array.isArray(importedData)) {
+        alert("올바르지 않은 파일입니다. (배열이 아님)");
+        return;
+      }
+
+      allChecklists = importedData;
+      localStorage.setItem('allChecklists', JSON.stringify(allChecklists));
+      renderChecklistList();
+      alert("백업 파일을 성공적으로 불러왔습니다!");
+    } catch (err) {
+      console.error(err);
+      alert("파일을 읽는 중 오류가 발생했습니다.");
+    }
+  };
+  reader.readAsText(file);
+}
+
+</script>
+
+</body>
+</html>
